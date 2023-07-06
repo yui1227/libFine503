@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using Fine503.Emums;
+using System.Diagnostics;
 using System.IO.Ports;
 using System.Text;
 
@@ -23,7 +24,9 @@ namespace Fine503 {
             _port = new(portName, baudRate, Parity.None, 8, StopBits.One) {
                 Encoding = Encoding.ASCII,
                 Handshake = Handshake.RequestToSend,
-                NewLine = "\r\n"
+                NewLine = "\r\n",
+                ReadTimeout = 3,
+                WriteTimeout = 3,
             };
 
             try {
@@ -33,7 +36,7 @@ namespace Fine503 {
                 throw;
             }
         }
-        public void MoveAbsolute(Axis channel, int[] movement) {
+        public void MoveAbsolute(Axis channel, int[] movement,out string result) {
             CheckParameter(channel, movement);
             var cmd = "";
             if (channel == Axis.All) {
@@ -44,7 +47,7 @@ namespace Fine503 {
                 Debug.Assert(movement.Length == 1);
                 cmd = $"A:{(int)channel}{GetSign(movement[0])}P{movement[0]}";
             }
-            Drive();
+            Drive(cmd,out result);
         }
         public void MoveRelative(Axis channel, int[] movement) {
 
@@ -52,8 +55,10 @@ namespace Fine503 {
         public void MoveContinous(Axis channel, bool[] isPositive) {
 
         }
-        private void Drive() {
-            var cmd = "G:";
+        private void Drive(string cmd, out string result) {
+            _port.WriteLine(cmd);
+            _port.WriteLine("G:");
+            result = _port.ReadLine();
         }
         public void ReturnMechanicalOrigin(Axis channel) {
 
@@ -123,15 +128,5 @@ namespace Fine503 {
         private char GetSign(int value) {
             return value >=0 ? '+' : '-';
         }
-    }
-    public enum Axis {
-        First = 1,
-        Second,
-        Third,
-        All
-    }
-    public enum ClosedLoopMode {
-        Track = 0,
-        Lock
     }
 }
