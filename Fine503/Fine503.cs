@@ -36,24 +36,38 @@ namespace Fine503 {
                 throw;
             }
         }
-        public void MoveAbsolute(Axis channel, int[] movement,out string result) {
+        public void MoveAbsolute(Axis channel, int[] movement, out string result) {
             CheckParameter(channel, movement);
             var cmd = "";
             if (channel == Axis.All) {
-                Debug.Assert(movement.Length == 3);
                 var cmdParam = movement.Select(step => $"{GetSign(step)}P{step}");
                 cmd = $"A:W{string.Join("", cmdParam)}";
             } else {
-                Debug.Assert(movement.Length == 1);
                 cmd = $"A:{(int)channel}{GetSign(movement[0])}P{movement[0]}";
             }
-            Drive(cmd,out result);
+            Drive(cmd, out result);
         }
-        public void MoveRelative(Axis channel, int[] movement) {
-
+        public void MoveRelative(Axis channel, int[] movement, out string result) {
+            CheckParameter(channel, movement);
+            var cmd = "";
+            if (channel == Axis.All) {
+                var cmdParam = movement.Select(step => $"{GetSign(step)}P{step}");
+                cmd = $"M:W{string.Join("", cmdParam)}";
+            } else {
+                cmd = $"M:{(int)channel}{GetSign(movement[0])}P{movement[0]}";
+            }
+            Drive(cmd, out result);
         }
-        public void MoveContinous(Axis channel, bool[] isPositive) {
-
+        public void MoveContinous(Axis channel, bool[] isPositive, out string result) {
+            CheckParameter(channel, isPositive);
+            var cmd = "";
+            if (channel == Axis.All) {
+                var cmdParam = isPositive.Select(direction => GetSign(direction));
+                cmd = $"J:W{string.Join("", cmdParam)}";
+            } else {
+                cmd = $"J:{(int)channel}{GetSign(isPositive[0])}";
+            }
+            Drive(cmd, out result);
         }
         private void Drive(string cmd, out string result) {
             _port.WriteLine(cmd);
@@ -125,8 +139,21 @@ namespace Fine503 {
                 throw new ArgumentException("Length of movement must be correct! 3 or 1");
             }
         }
-        private char GetSign(int value) {
-            return value >=0 ? '+' : '-';
+        /// <summary>
+        /// 抓取符號，如果是數字則根據輸入參數判定符號
+        /// </summary>
+        /// <typeparam name="T">可為bool或是數字</typeparam>
+        /// <param name="value">輸入數值</param>
+        /// <returns>正負號</returns>
+        /// <exception cref="ArgumentException"></exception>
+        private char GetSign<T>(T value) {
+            if (value is int val) {
+                return val >= 0 ? '+' : '-';
+            } else if (value is bool isPositive) {
+                return isPositive ? '+' : '-';
+            } else {
+                throw new ArgumentException(nameof(value));
+            }
         }
     }
 }
