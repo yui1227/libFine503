@@ -1,7 +1,9 @@
 ﻿using Fine503.Emums;
 using System.Diagnostics;
 using System.IO.Ports;
+using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading.Channels;
 
 namespace Fine503 {
     public class Fine503 {
@@ -74,50 +76,145 @@ namespace Fine503 {
             _port.WriteLine("G:");
             result = _port.ReadLine();
         }
-        public void ReturnMechanicalOrigin(Axis channel) {
-
+        /// <summary>
+        /// 回到機械原點
+        /// </summary>
+        /// <param name="channel"></param>
+        public void ReturnMechanicalOrigin(Axis channel,out string result) {
+            CheckAxisCorrect(channel);
+            var cmd = $"H:{(int)channel}";
+            if(channel == Axis.All) {
+                cmd = $"H:W";
+            }
+            _port.WriteLine(cmd);
+            result = _port.ReadLine();
         }
-        public void ReturnLogicalOrigin(Axis channel) {
-
+        public void ReturnLogicalOrigin(Axis channel,out string result) {
+            CheckAxisCorrect(channel);
+            var cmd = $"N:{(int)channel}";
+            if (channel == Axis.All) {
+                cmd = $"N:W";
+            }
+            _port.WriteLine(cmd);
+            result = _port.ReadLine();
         }
-        public void StopAxis(Axis channel) {
-
+        public void StopAxis(Axis channel,out string result) {
+            CheckAxisCorrect(channel);
+            var cmd = $"L:{(int)channel}";
+            if (channel == Axis.All) {
+                cmd = $"L:W";
+            }
+            _port.WriteLine(cmd);
+            result = _port.ReadLine();
         }
-        public void StopAndGoToMechanicalOrigin() {
-
+        public void StopAndGoToMechanicalOrigin(out string result) {
+            var cmd = $"L:E";
+            _port.WriteLine(cmd);
+            result = _port.ReadLine();
         }
-        public void ClearCoordinateValue(Axis channel) {
-
+        public void ClearCoordinateValue(Axis channel, out string result) {
+            CheckAxisCorrect(channel);
+            var cmd = $"R:{(int)channel}";
+            if (channel == Axis.All) {
+                cmd = $"R:W";
+            }
+            _port.WriteLine(cmd);
+            result = _port.ReadLine();
         }
-        public void SetStepAmount(Axis channel, int[] steps) {
-
+        public void SetStepAmount(Axis channel, int[] steps, out string result) {
+            CheckParameter(channel, steps);
+            var cmd = "";
+            if (channel == Axis.All) {
+                var cmdParam = steps.Select(step => $"{step}S");
+                cmd = $"D:W{string.Join("", cmdParam)}";
+            } else {
+                cmd = $"D:{(int)channel}{steps[0]}S";
+            }
+            _port.WriteLine(cmd);
+            result = _port.ReadLine();
         }
-        public void HysteresisCurveDataAcquisition() {
-
+        public void HysteresisCurveDataAcquisition(out string result) {
+            var cmd = $"@:";
+            _port.WriteLine(cmd);
+            result = _port.ReadLine();
         }
-        public void SetClosedLoopMode(ClosedLoopMode mode) {
-
+        public void SetClosedLoopMode(ClosedLoopMode mode, out string result) {
+            var cmd = $"K:{(int)mode}";
+            _port.WriteLine(cmd);
+            result = _port.ReadLine();
         }
         public void GetStatus(out int[] steps, out char[] state) {
-
+            var cmd = $"Q:";
+            _port.WriteLine(cmd);
+            var response = _port.ReadLine();
+            var data = response.Replace(" ", "").Split(",");
+            Debug.Assert(data.Length == 6);
+            steps = new[] { int.Parse(data[0]), int.Parse(data[1]), int.Parse(data[2]) };
+            state = new[] { data[3][0], data[4][0], data[5][0] };
         }
         public void GetVoltage(Axis channel, out int[] voltage) {
-
+            CheckAxisCorrect(channel);
+            var cmd = "";
+            if (channel==Axis.All) {
+                cmd = @"V:W";
+            } else {
+                cmd = $"V:{(int)channel}";
+            }
+            _port.WriteLine(cmd);
+            var response = _port.ReadLine().Replace(" ", "").Split(",");
+            if (response.Length == 3) {
+                voltage = new[] { int.Parse(response[0]), int.Parse(response[1]), int.Parse(response[2]) };
+            } else {
+                voltage = new[] { int.Parse(response[0]) };
+            }
         }
         public void GetACK3Status(out char status) {
-
+            var cmd = $"!:";
+            _port.WriteLine(cmd);
+            var result = _port.ReadLine();
+            status = result[0];
         }
         public void GetModelName(out string modelName) {
-
+            var cmd = $"?:N";
+            _port.WriteLine(cmd);
+            modelName = _port.ReadLine();
         }
         public void GetVersionNumber(out string version) {
-
+            var cmd = $"?:V";
+            _port.WriteLine(cmd);
+            version = _port.ReadLine();
         }
-        public void GetSpeedNumber(Axis channel, out int speed) {
-
+        public void GetSpeedNumber(Axis channel, out int[] speed) {
+            CheckAxisCorrect(channel);
+            var cmd = "";
+            if (channel == Axis.All) {
+                cmd = $"?:DW";
+            } else {
+                cmd = $"?:D{(int)channel}";
+            }
+            _port.WriteLine(cmd);
+            var response = _port.ReadLine().Split("S", StringSplitOptions.RemoveEmptyEntries);
+            if (response.Length == 3) {
+                speed = new[] { int.Parse(response[0]), int.Parse(response[1]), int.Parse(response[2]) };
+            } else {
+                speed = new[] { int.Parse(response[0]) };
+            }
         }
-        public void GetControlMode(Axis channel, out int controlMode) {
-
+        public void GetControlMode(Axis channel, out int[] controlMode) {
+            CheckAxisCorrect(channel);
+            var cmd = "";
+            if (channel == Axis.All) {
+                cmd = $"?:CW";
+            } else {
+                cmd = $"?:C{(int)channel}";
+            }
+            _port.WriteLine(cmd);
+            var response = _port.ReadLine().Split(",", StringSplitOptions.RemoveEmptyEntries);
+            if (response.Length == 3) {
+                controlMode = new[] { int.Parse(response[0]), int.Parse(response[1]), int.Parse(response[2]) };
+            } else {
+                controlMode = new[] { int.Parse(response[0]) };
+            }
         }
         /// <summary>
         /// 檢查輸入參數數量和軸的選擇是否正確配對
@@ -137,6 +234,11 @@ namespace Fine503 {
             };
             if (!paramLengthCorrect) {
                 throw new ArgumentException("Length of movement must be correct! 3 or 1");
+            }
+        }
+        private void CheckAxisCorrect(Axis channel) {
+            if (!Enum.IsDefined(channel)) {
+                throw new ArgumentException("Axis Error!");
             }
         }
         /// <summary>
