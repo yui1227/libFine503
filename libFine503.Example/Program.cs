@@ -1,9 +1,9 @@
-﻿using Fine503.Emums;
+﻿using Fine503.Enums;
 using System.IO.Ports;
 
 var port = SerialPort.GetPortNames()[0];
 
-using var instance = new Fine503.Fine503(port, 38400);
+using var instance = new Fine503.Fine503(port, 38400) { ShowCommandInConsole = true };
 
 int[] steps = new int[1];
 var delay = 1000;

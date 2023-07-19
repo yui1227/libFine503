@@ -1,4 +1,4 @@
-﻿namespace Fine503.Emums {
+﻿namespace Fine503.Enums {
     public enum Axis {
         First = 1,
         Second,

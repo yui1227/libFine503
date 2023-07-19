@@ -1,4 +1,6 @@
-﻿using Fine503.Emums;
+﻿using Fine503.Enums;
+using System;
+using System.ComponentModel.Design;
 using System.Diagnostics;
 using System.IO.Ports;
 using System.Runtime.CompilerServices;
@@ -6,9 +8,10 @@ using System.Text;
 using System.Threading.Channels;
 
 namespace Fine503 {
-    public class Fine503 {
+    public class Fine503 : IDisposable {
         private readonly SerialPort _port;
         public bool IsOpen => _port.IsOpen;
+        public bool ShowCommandInConsole { get; set; } = false;
         /// <summary>
         /// 透過RS232連接FINE-503
         /// </summary>
@@ -20,15 +23,15 @@ namespace Fine503 {
             if (string.IsNullOrEmpty(portName)) {
                 throw new ArgumentNullException(nameof(portName));
             }
-            if (baudRate != 4800 || baudRate != 9600 || baudRate != 19200 || baudRate != 38400) {
+            if (baudRate != 4800 && baudRate != 9600 && baudRate != 19200 && baudRate != 38400) {
                 throw new ArgumentException("baudRate must be 4800, 9600, 19200 or 38400!");
             }
             _port = new(portName, baudRate, Parity.None, 8, StopBits.One) {
                 Encoding = Encoding.ASCII,
                 Handshake = Handshake.RequestToSend,
                 NewLine = "\r\n",
-                ReadTimeout = 3,
-                WriteTimeout = 3,
+                ReadTimeout = 3000,
+                WriteTimeout = 3000,
             };
 
             try {
@@ -38,6 +41,20 @@ namespace Fine503 {
                 throw;
             }
         }
+        private void SendCommand(string cmd, out string result) {
+            _port.WriteLine(cmd);
+            result = _port.ReadLine();
+            if (ShowCommandInConsole) {
+                Console.WriteLine($"{cmd}");
+                Console.WriteLine($"\t{result}");
+            }
+        }
+        /// <summary>
+        /// 設定特定軸的絕對位置
+        /// </summary>
+        /// <param name="channel">要設定的軸</param>
+        /// <param name="movement">位移量，單一軸接受長度為1的陣列，全部軸接收長度為3的陣列</param>
+        /// <param name="result">移動台回應的結果，為OK或是NG</param>
         public void MoveAbsolute(Axis channel, int[] movement, out string result) {
             CheckParameter(channel, movement);
             var cmd = "";
@@ -47,8 +64,14 @@ namespace Fine503 {
             } else {
                 cmd = $"A:{(int)channel}{GetSign(movement[0])}P{movement[0]}";
             }
-            Drive(cmd, out result);
+            SendCommand(cmd, out result);
         }
+        /// <summary>
+        /// 設定特定軸的相對位置
+        /// </summary>
+        /// <param name="channel">要設定的軸</param>
+        /// <param name="movement">位移量，單一軸接受長度為1的陣列，全部軸接收長度為3的陣列</param>
+        /// <param name="result">移動台回應的結果，為OK或是NG</param>
         public void MoveRelative(Axis channel, int[] movement, out string result) {
             CheckParameter(channel, movement);
             var cmd = "";
@@ -58,8 +81,14 @@ namespace Fine503 {
             } else {
                 cmd = $"M:{(int)channel}{GetSign(movement[0])}P{movement[0]}";
             }
-            Drive(cmd, out result);
+            SendCommand(cmd, out result);
         }
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="channel">要設定的軸</param>
+        /// <param name="isPositive">設定是否往正方向移動，單一軸接受長度為1的陣列，全部軸接收長度為3的陣列</param>
+        /// <param name="result">移動台回應的結果，為OK或是NG</param>
         public void MoveContinous(Axis channel, bool[] isPositive, out string result) {
             CheckParameter(channel, isPositive);
             var cmd = "";
@@ -69,58 +98,82 @@ namespace Fine503 {
             } else {
                 cmd = $"J:{(int)channel}{GetSign(isPositive[0])}";
             }
-            Drive(cmd, out result);
+            SendCommand(cmd, out result);
         }
-        private void Drive(string cmd, out string result) {
-            _port.WriteLine(cmd);
-            _port.WriteLine("G:");
-            result = _port.ReadLine();
+        /// <summary>
+        /// 在設定絕對位置或是相對位置或是連續移動後，需要透過這個指令來驅動移動台動作
+        /// </summary>
+        /// <param name="result">移動台回應的結果，為OK或是NG</param>
+        public void Drive(out string result) {
+            var cmd = "G:";
+            SendCommand(cmd, out result);
         }
         /// <summary>
         /// 回到機械原點
         /// </summary>
-        /// <param name="channel"></param>
-        public void ReturnMechanicalOrigin(Axis channel,out string result) {
+        /// <param name="channel">要設定的軸</param>
+        /// <param name="result">移動台回應的結果，為OK或是NG</param>
+        public void ReturnMechanicalOrigin(Axis channel, out string result) {
             CheckAxisCorrect(channel);
             var cmd = $"H:{(int)channel}";
-            if(channel == Axis.All) {
+            if (channel == Axis.All) {
                 cmd = $"H:W";
             }
-            _port.WriteLine(cmd);
-            result = _port.ReadLine();
+            SendCommand(cmd, out result);
         }
-        public void ReturnLogicalOrigin(Axis channel,out string result) {
+        /// <summary>
+        /// 回到邏輯原點
+        /// </summary>
+        /// <param name="channel">要設定的軸</param>
+        /// <param name="result">移動台回應的結果，為OK或是NG</param>
+        public void ReturnLogicalOrigin(Axis channel, out string result) {
             CheckAxisCorrect(channel);
             var cmd = $"N:{(int)channel}";
             if (channel == Axis.All) {
                 cmd = $"N:W";
             }
-            _port.WriteLine(cmd);
-            result = _port.ReadLine();
+            SendCommand(cmd, out result);
         }
-        public void StopAxis(Axis channel,out string result) {
+        /// <summary>
+        /// 停止移動台動作
+        /// </summary>
+        /// <param name="channel">要設定的軸</param>
+        /// <param name="result">移動台回應的結果，為OK或是NG</param>
+        public void StopAxis(Axis channel, out string result) {
             CheckAxisCorrect(channel);
             var cmd = $"L:{(int)channel}";
             if (channel == Axis.All) {
                 cmd = $"L:W";
             }
-            _port.WriteLine(cmd);
-            result = _port.ReadLine();
+            SendCommand(cmd, out result);
         }
+        /// <summary>
+        /// 立刻停止移動台動作並回到機械原點
+        /// </summary>
+        /// <param name="result">移動台回應的結果，為OK或是NG</param>
         public void StopAndGoToMechanicalOrigin(out string result) {
             var cmd = $"L:E";
-            _port.WriteLine(cmd);
-            result = _port.ReadLine();
+            SendCommand(cmd, out result);
         }
+        /// <summary>
+        /// 清除座標值
+        /// </summary>
+        /// <param name="channel">要設定的軸</param>
+        /// <param name="result">移動台回應的結果，為OK或是NG</param>
         public void ClearCoordinateValue(Axis channel, out string result) {
             CheckAxisCorrect(channel);
             var cmd = $"R:{(int)channel}";
             if (channel == Axis.All) {
                 cmd = $"R:W";
             }
-            _port.WriteLine(cmd);
-            result = _port.ReadLine();
+            SendCommand(cmd, out result);
         }
+        /// <summary>
+        /// 設定位移量
+        /// </summary>
+        /// <param name="channel">要設定的軸</param>
+        /// <param name="steps">位移量，單一軸接受長度為1的陣列，全部軸接收長度為3的陣列，位移量範圍為1~3000步</param>
+        /// <param name="result">移動台回應的結果，為OK或是NG</param>
         public void SetStepAmount(Axis channel, int[] steps, out string result) {
             CheckParameter(channel, steps);
             var cmd = "";
@@ -130,59 +183,83 @@ namespace Fine503 {
             } else {
                 cmd = $"D:{(int)channel}{steps[0]}S";
             }
-            _port.WriteLine(cmd);
-            result = _port.ReadLine();
+            SendCommand(cmd, out result);
         }
+        /// <summary>
+        /// 此命令通過感測器讀取位移值並獲取遲滯特性。開迴路時顯示0mV
+        /// </summary>
+        /// <param name="result">移動台回應的結果，為OK或是NG</param>
         public void HysteresisCurveDataAcquisition(out string result) {
             var cmd = $"@:";
-            _port.WriteLine(cmd);
-            result = _port.ReadLine();
+            SendCommand(cmd, out result);
         }
+        /// <summary>
+        /// 設定閉迴路模式
+        /// </summary>
+        /// <param name="mode">閉迴路模式，可為Track或是Lock</param>
+        /// <param name="result">移動台回應的結果，為OK或是NG</param>
         public void SetClosedLoopMode(ClosedLoopMode mode, out string result) {
             var cmd = $"K:{(int)mode}";
-            _port.WriteLine(cmd);
-            result = _port.ReadLine();
+            SendCommand(cmd, out result);
         }
+        /// <summary>
+        /// 獲取移動台目前狀態
+        /// </summary>
+        /// <param name="steps">三軸目前的數值</param>
+        /// <param name="state">三種狀態，請看說明書</param>
         public void GetStatus(out int[] steps, out char[] state) {
             var cmd = $"Q:";
-            _port.WriteLine(cmd);
-            var response = _port.ReadLine();
+            SendCommand(cmd, out var response);
             var data = response.Replace(" ", "").Split(",");
             Debug.Assert(data.Length == 6);
             steps = new[] { int.Parse(data[0]), int.Parse(data[1]), int.Parse(data[2]) };
             state = new[] { data[3][0], data[4][0], data[5][0] };
         }
+        /// <summary>
+        /// 查看供給電壓
+        /// </summary>
+        /// <param name="channel">要查看的軸</param>
+        /// <param name="voltage">回傳的電壓值，單一軸回傳長度為1的陣列，全部軸回傳長度為3的陣列</param>
         public void GetVoltage(Axis channel, out int[] voltage) {
             CheckAxisCorrect(channel);
             var cmd = "";
-            if (channel==Axis.All) {
+            if (channel == Axis.All) {
                 cmd = @"V:W";
             } else {
                 cmd = $"V:{(int)channel}";
             }
-            _port.WriteLine(cmd);
-            var response = _port.ReadLine().Replace(" ", "").Split(",");
+            SendCommand(cmd, out var result);
+            var response = result.Replace(" ", "").Split(",");
             if (response.Length == 3) {
                 voltage = new[] { int.Parse(response[0]), int.Parse(response[1]), int.Parse(response[2]) };
             } else {
                 voltage = new[] { int.Parse(response[0]) };
             }
         }
+        /// <summary>
+        /// 獲得目前移動台的命令接收能力狀態
+        /// </summary>
+        /// <param name="status">回傳的狀態</param>
         public void GetACK3Status(out char status) {
             var cmd = $"!:";
-            _port.WriteLine(cmd);
-            var result = _port.ReadLine();
+            SendCommand(cmd, out var result);
             status = result[0];
         }
+        /// <summary>
+        /// 獲得移動台機型
+        /// </summary>
+        /// <param name="modelName">移動台的型號</param>
         public void GetModelName(out string modelName) {
             var cmd = $"?:N";
-            _port.WriteLine(cmd);
-            modelName = _port.ReadLine();
+            SendCommand(cmd, out modelName);
         }
+        /// <summary>
+        /// 獲得移動台版本號
+        /// </summary>
+        /// <param name="version">版本</param>
         public void GetVersionNumber(out string version) {
             var cmd = $"?:V";
-            _port.WriteLine(cmd);
-            version = _port.ReadLine();
+            SendCommand(cmd, out version);
         }
         public void GetSpeedNumber(Axis channel, out int[] speed) {
             CheckAxisCorrect(channel);
@@ -192,8 +269,8 @@ namespace Fine503 {
             } else {
                 cmd = $"?:D{(int)channel}";
             }
-            _port.WriteLine(cmd);
-            var response = _port.ReadLine().Split("S", StringSplitOptions.RemoveEmptyEntries);
+            SendCommand(cmd, out var result);
+            var response = result.Split("S", StringSplitOptions.RemoveEmptyEntries);
             if (response.Length == 3) {
                 speed = new[] { int.Parse(response[0]), int.Parse(response[1]), int.Parse(response[2]) };
             } else {
@@ -208,8 +285,8 @@ namespace Fine503 {
             } else {
                 cmd = $"?:C{(int)channel}";
             }
-            _port.WriteLine(cmd);
-            var response = _port.ReadLine().Split(",", StringSplitOptions.RemoveEmptyEntries);
+            SendCommand(cmd, out var result);
+            var response = result.Split(",", StringSplitOptions.RemoveEmptyEntries);
             if (response.Length == 3) {
                 controlMode = new[] { int.Parse(response[0]), int.Parse(response[1]), int.Parse(response[2]) };
             } else {
@@ -256,6 +333,11 @@ namespace Fine503 {
             } else {
                 throw new ArgumentException(nameof(value));
             }
+        }
+
+        public void Dispose() {
+            _port?.Close();
+            _port?.Dispose();
         }
     }
 }
